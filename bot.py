@@ -115,7 +115,6 @@ async def handle_link(message: Message):
     folder = tempfile.mkdtemp(prefix="navo_")
 
     try:
-
         try:
             filepath, info = await asyncio.to_thread(
                 download_video,
@@ -153,14 +152,12 @@ async def handle_link(message: Message):
         )
 
         try:
-
             await message.answer_video(
                 video=video,
                 caption="✅ Готово!"
             )
 
         except Exception:
-
             await message.answer_document(
                 document=video,
                 caption="✅ Готово!"
@@ -169,7 +166,6 @@ async def handle_link(message: Message):
         await status.delete()
 
     finally:
-
         shutil.rmtree(
             folder,
             ignore_errors=True
@@ -177,9 +173,7 @@ async def handle_link(message: Message):
 
 
 async def main():
-
     bot = Bot(TOKEN)
-
     await dp.start_polling(bot)
 
 
