@@ -23,7 +23,6 @@ if not TOKEN:
 
 dp = Dispatcher()
 
-
 URL_RE = re.compile(r"https?://\S+", re.I)
 
 SUPPORTED_HOSTS = (
@@ -73,9 +72,7 @@ def download_video(url: str, folder: str):
             filepath = mp4
 
         if not Path(filepath).exists():
-            files = list(
-                Path(folder).glob("*")
-            )
+            files = list(Path(folder).glob("*"))
 
             if not files:
                 raise FileNotFoundError(
@@ -111,7 +108,6 @@ async def help_command(message: Message):
 
 @dp.message(F.text)
 async def handle_link(message: Message):
-
     match = URL_RE.search(message.text)
 
     if not match:
@@ -120,9 +116,7 @@ async def handle_link(message: Message):
         )
         return
 
-    url = match.group(0).rstrip(
-        ".,!?)]}"
-    )
+    url = match.group(0).rstrip(".,!?)]}")
 
     if not is_supported_url(url):
         await message.answer(
@@ -140,7 +134,6 @@ async def handle_link(message: Message):
     )
 
     try:
-
         try:
             filepath, info = await asyncio.to_thread(
                 download_video,
@@ -149,9 +142,7 @@ async def handle_link(message: Message):
             )
 
         except Exception:
-            logging.exception(
-                "Download error"
-            )
+            logging.exception("Download error")
 
             await status.edit_text(
                 "❌ Не получилось скачать видео.\n\n"
@@ -165,9 +156,7 @@ async def handle_link(message: Message):
             "📤 Отправляю видео..."
         )
 
-        title = info.get(
-            "title"
-        ) or "video"
+        title = info.get("title") or "video"
 
         safe_title = re.sub(
             r'[\\/:*?"<>|]+',
@@ -184,14 +173,12 @@ async def handle_link(message: Message):
         )
 
         try:
-
             await message.answer_video(
                 video=video,
                 caption="✅ Готово!"
             )
 
         except Exception:
-
             await message.answer_document(
                 document=video,
                 caption="✅ Готово!"
@@ -200,7 +187,6 @@ async def handle_link(message: Message):
         await status.delete()
 
     finally:
-
         shutil.rmtree(
             folder,
             ignore_errors=True
@@ -208,7 +194,6 @@ async def handle_link(message: Message):
 
 
 async def main():
-
     bot = Bot(TOKEN)
 
     await dp.start_polling(bot)
