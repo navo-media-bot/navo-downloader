@@ -12,8 +12,8 @@ import yt_dlp
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, CommandStart
 from aiogram.types import (
-    Message,
     FSInputFile,
+    Message,
     CallbackQuery,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
@@ -21,27 +21,31 @@ from aiogram.types import (
     BotCommandScopeChat,
 )
 
-
-# =========================
-# НАСТРОЙКИ
-# =========================
+logging.basicConfig(level=logging.INFO)
 
 TOKEN = os.getenv("BOT_TOKEN")
 
 if not TOKEN:
-    raise RuntimeError(
-        "BOT_TOKEN не найден. Добавь токен бота в переменную BOT_TOKEN."
-    )
+    raise RuntimeError("BOT_TOKEN не найден")
 
 ADMIN_ID = 6770975543
 DATABASE = "navo.db"
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(message)s",
+dp = Dispatcher()
+
+HOSTS = (
+    "youtube.com",
+    "youtu.be",
+    "tiktok.com",
+    "instagram.com",
 )
 
-dp = Dispatcher()
+URL_RE = re.compile(
+    r"https?://\S+",
+    re.IGNORECASE
+)
+
+broadcast_mode = False
 
 
 # =========================
@@ -51,29 +55,25 @@ dp = Dispatcher()
 def init_db():
     conn = sqlite3.connect(DATABASE)
 
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
             username TEXT,
             first_name TEXT,
-            joined_at TEXT DEFAULT CURRENT_TIMESTAMP,
-            blocked INTEGER DEFAULT 0
+            blocked INTEGER DEFAULT 0,
+            joined_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
-        """
-    )
+    """)
 
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS downloads (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER,
             url TEXT,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-            success INTEGER DEFAULT 0
+            success INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
-        """
-    )
+    """)
 
     conn.commit()
     conn.close()
@@ -87,36 +87,32 @@ def save_user(message: Message):
 
     conn = sqlite3.connect(DATABASE)
 
-    conn.execute(
-        """
+    conn.execute("""
         INSERT INTO users (
             user_id,
             username,
             first_name
         )
         VALUES (?, ?, ?)
-        ON CONFLICT(user_id)
-        DO UPDATE SET
+        ON CONFLICT(user_id) DO UPDATE SET
             username = excluded.username,
             first_name = excluded.first_name
-        """,
-        (
-            user.id,
-            user.username,
-            user.first_name,
-        ),
-    )
+    """, (
+        user.id,
+        user.username,
+        user.first_name,
+    ))
 
     conn.commit()
     conn.close()
 
 
-def is_blocked(user_id: int) -> bool:
+def is_blocked(user_id):
     conn = sqlite3.connect(DATABASE)
 
     row = conn.execute(
-        "SELECT blocked FROM users WHERE user_id = ?",
-        (user_id,),
+        "SELECT blocked FROM users WHERE user_id=?",
+        (user_id,)
     ).fetchone()
 
     conn.close()
@@ -124,48 +120,21 @@ def is_blocked(user_id: int) -> bool:
     return bool(row and row[0])
 
 
-def get_stats():
+def add_download(user_id, url, success):
     conn = sqlite3.connect(DATABASE)
 
-    users = conn.execute(
-        "SELECT COUNT(*) FROM users"
-    ).fetchone()[0]
-
-    blocked = conn.execute(
-        "SELECT COUNT(*) FROM users WHERE blocked = 1"
-    ).fetchone()[0]
-
-    downloads = conn.execute(
-        "SELECT COUNT(*) FROM downloads"
-    ).fetchone()[0]
-
-    successful = conn.execute(
-        "SELECT COUNT(*) FROM downloads WHERE success = 1"
-    ).fetchone()[0]
-
-    conn.close()
-
-    return users, blocked, downloads, successful
-
-
-def add_download(user_id: int, url: str, success: bool):
-    conn = sqlite3.connect(DATABASE)
-
-    conn.execute(
-        """
+    conn.execute("""
         INSERT INTO downloads (
             user_id,
             url,
             success
         )
         VALUES (?, ?, ?)
-        """,
-        (
-            user_id,
-            url,
-            1 if success else 0,
-        ),
-    )
+    """, (
+        user_id,
+        url,
+        1 if success else 0,
+    ))
 
     conn.commit()
     conn.close()
@@ -175,13 +144,9 @@ def add_download(user_id: int, url: str, success: bool):
 # ПРОВЕРКА АДМИНА
 # =========================
 
-def is_admin_user(user_id: int) -> bool:
+def is_admin(user_id):
     return user_id == ADMIN_ID
 
-
-# =========================
-# АДМИН-КЛАВИАТУРА
-# =========================
 
 def admin_keyboard():
     return InlineKeyboardMarkup(
@@ -189,25 +154,19 @@ def admin_keyboard():
             [
                 InlineKeyboardButton(
                     text="📊 Статистика",
-                    callback_data="stats",
+                    callback_data="admin_stats"
                 )
             ],
             [
                 InlineKeyboardButton(
                     text="👥 Пользователи",
-                    callback_data="users",
+                    callback_data="admin_users"
                 )
             ],
             [
                 InlineKeyboardButton(
                     text="📢 Рассылка",
-                    callback_data="broadcast",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🚫 Заблокированные",
-                    callback_data="blocked",
+                    callback_data="admin_broadcast"
                 )
             ],
         ]
@@ -215,17 +174,14 @@ def admin_keyboard():
 
 
 # =========================
-# КОМАНДА /ADMIN
+# АДМИН-ПАНЕЛЬ
 # =========================
 
 @dp.message(Command("admin"))
-async def admin_command(message: Message):
-    if not message.from_user:
-        return
-
+async def admin(message: Message):
     save_user(message)
 
-    if not is_admin_user(message.from_user.id):
+    if not is_admin(message.from_user.id):
         await message.answer(
             "⛔ Доступ запрещён."
         )
@@ -233,73 +189,81 @@ async def admin_command(message: Message):
 
     await message.answer(
         "👑 <b>Navo Downloader</b>\n\n"
-        "⚙️ Панель администратора\n\n"
+        "⚙️ Админ-панель\n\n"
         "Выбери раздел:",
         reply_markup=admin_keyboard(),
         parse_mode="HTML",
     )
 
 
-# =========================
-# СТАТИСТИКА
-# =========================
-
-@dp.callback_query(F.data == "stats")
-async def stats_callback(callback: CallbackQuery):
-    if not is_admin_user(callback.from_user.id):
+@dp.callback_query(F.data == "admin_stats")
+async def admin_stats(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
         await callback.answer(
             "⛔ Доступ запрещён.",
-            show_alert=True,
+            show_alert=True
         )
         return
 
-    users, blocked, downloads, successful = get_stats()
+    conn = sqlite3.connect(DATABASE)
 
-    text = (
-        "📊 <b>Статистика Navo Downloader</b>\n\n"
-        f"👥 Пользователей: <b>{users}</b>\n"
-        f"🚫 Заблокировано: <b>{blocked}</b>\n"
-        f"⬇️ Запросов на скачивание: <b>{downloads}</b>\n"
-        f"✅ Успешных скачиваний: <b>{successful}</b>"
-    )
+    users = conn.execute(
+        "SELECT COUNT(*) FROM users"
+    ).fetchone()[0]
+
+    blocked = conn.execute(
+        "SELECT COUNT(*) FROM users WHERE blocked=1"
+    ).fetchone()[0]
+
+    downloads = conn.execute(
+        "SELECT COUNT(*) FROM downloads"
+    ).fetchone()[0]
+
+    successful = conn.execute(
+        "SELECT COUNT(*) FROM downloads WHERE success=1"
+    ).fetchone()[0]
+
+    conn.close()
 
     await callback.message.answer(
-        text,
+        "📊 <b>Статистика</b>\n\n"
+        f"👥 Пользователей: <b>{users}</b>\n"
+        f"🚫 Заблокировано: <b>{blocked}</b>\n"
+        f"⬇️ Запросов: <b>{downloads}</b>\n"
+        f"✅ Успешных скачиваний: <b>{successful}</b>",
         parse_mode="HTML",
     )
 
     await callback.answer()
 
 
-# =========================
-# ПОЛЬЗОВАТЕЛИ
-# =========================
-
-@dp.callback_query(F.data == "users")
-async def users_callback(callback: CallbackQuery):
-    if not is_admin_user(callback.from_user.id):
+@dp.callback_query(F.data == "admin_users")
+async def admin_users(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
         await callback.answer(
             "⛔ Доступ запрещён.",
-            show_alert=True,
+            show_alert=True
         )
         return
 
     conn = sqlite3.connect(DATABASE)
 
-    rows = conn.execute(
-        """
-        SELECT user_id, username, first_name, blocked
+    rows = conn.execute("""
+        SELECT
+            user_id,
+            username,
+            first_name,
+            blocked
         FROM users
         ORDER BY joined_at DESC
         LIMIT 20
-        """
-    ).fetchall()
+    """).fetchall()
 
     conn.close()
 
     if not rows:
         await callback.message.answer(
-            "👥 Пользователей пока нет."
+            "👥 Пока никто не пользовался ботом."
         )
         await callback.answer()
         return
@@ -321,61 +285,44 @@ async def users_callback(callback: CallbackQuery):
 
     await callback.message.answer(
         text,
-        parse_mode="HTML",
+        parse_mode="HTML"
     )
 
     await callback.answer()
 
 
-# =========================
-# ЗАБЛОКИРОВАННЫЕ
-# =========================
+@dp.callback_query(F.data == "admin_broadcast")
+async def admin_broadcast(callback: CallbackQuery):
+    global broadcast_mode
 
-@dp.callback_query(F.data == "blocked")
-async def blocked_callback(callback: CallbackQuery):
-    if not is_admin_user(callback.from_user.id):
+    if not is_admin(callback.from_user.id):
         await callback.answer(
             "⛔ Доступ запрещён.",
-            show_alert=True,
+            show_alert=True
         )
         return
 
-    conn = sqlite3.connect(DATABASE)
-
-    rows = conn.execute(
-        """
-        SELECT user_id, username, first_name
-        FROM users
-        WHERE blocked = 1
-        ORDER BY joined_at DESC
-        """
-    ).fetchall()
-
-    conn.close()
-
-    if not rows:
-        await callback.message.answer(
-            "🚫 Заблокированных пользователей нет."
-        )
-        await callback.answer()
-        return
-
-    text = "🚫 <b>Заблокированные</b>\n\n"
-
-    for user_id, username, first_name in rows:
-        name = first_name or "Без имени"
-
-        if username:
-            name += f" (@{username})"
-
-        text += (
-            f"• {name}\n"
-            f"ID: <code>{user_id}</code>\n\n"
-        )
+    broadcast_mode = True
 
     await callback.message.answer(
-        text,
-        parse_mode="HTML",
+        "📢 <b>Рассылка</b>\n\n"
+        "Отправь следующим сообщением текст рассылки.\n\n"
+        "Для отмены отправь /cancel.",
+        parse_mode="HTML"
     )
 
     await callback.answer()
+
+
+@dp.message(Command("cancel"))
+async def cancel_broadcast(message: Message):
+    global broadcast_mode
+
+    if not is_admin(message.from_user.id):
+        return
+
+    broadcast_mode = False
+
+    await message.answer(
+        "❌ Рассылка отменена."
+)
