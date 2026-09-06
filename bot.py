@@ -32,8 +32,7 @@ SUPPORTED_HOSTS = (
 
 
 def is_supported_url(url: str) -> bool:
-    url = url.lower()
-    return any(host in url for host in SUPPORTED_HOSTS)
+    return any(host in url.lower() for host in SUPPORTED_HOSTS)
 
 
 def download_video(url: str, folder: str):
