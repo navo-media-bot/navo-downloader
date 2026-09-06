@@ -6,47 +6,66 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message, FSInputFile
-from aiogram.filters import CommandStart, Command
-
 import yt_dlp
+from aiogram import Bot, Dispatcher, F
+from aiogram.filters import Command, CommandStart
+from aiogram.types import FSInputFile, Message
 
 
-logging.basicConfig(level=logging.INFO)
+# =========================
+# НАСТРОЙКИ
+# =========================
 
 TOKEN = os.getenv("BOT_TOKEN")
 
 if not TOKEN:
-    raise RuntimeError("BOT_TOKEN is not set")
+    raise RuntimeError(
+        "BOT_TOKEN не найден. Сначала задай переменную BOT_TOKEN."
+    )
 
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
 dp = Dispatcher()
 
-URL_RE = re.compile(r"https?://\S+", re.I)
+
+# =========================
+# ССЫЛКИ
+# =========================
+
+URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
 
 SUPPORTED_HOSTS = (
     "youtube.com",
     "youtu.be",
-    "instagram.com",
     "tiktok.com",
+    "instagram.com",
 )
 
 
 def is_supported_url(url: str) -> bool:
+    url_lower = url.lower()
+
     return any(
-        host in url.lower()
+        host in url_lower
         for host in SUPPORTED_HOSTS
     )
 
 
+# =========================
+# СКАЧИВАНИЕ
+# =========================
+
 def download_video(url: str, folder: str):
-    output = str(
+    output_template = str(
         Path(folder) / "%(title).80s-%(id)s.%(ext)s"
     )
 
     options = {
-        "outtmpl": output,
+        "outtmpl": output_template,
         "format": "best[ext=mp4]/best",
         "merge_output_format": "mp4",
         "noplaylist": True,
@@ -64,51 +83,69 @@ def download_video(url: str, folder: str):
 
         filepath = ydl.prepare_filename(info)
 
-        mp4 = str(
-            Path(filepath).with_suffix(".mp4")
-        )
+    path = Path(filepath)
 
-        if Path(mp4).exists():
-            filepath = mp4
+    # Иногда yt-dlp после объединения меняет расширение на mp4
+    mp4_path = path.with_suffix(".mp4")
 
-        if not Path(filepath).exists():
-            files = list(Path(folder).glob("*"))
+    if mp4_path.exists():
+        path = mp4_path
 
-            if not files:
-                raise FileNotFoundError(
-                    "Video file not found"
-                )
+    if not path.exists():
+        files = [
+            p for p in Path(folder).iterdir()
+            if p.is_file()
+        ]
 
-            filepath = str(files[0])
+        if not files:
+            raise FileNotFoundError(
+                "Скачанный файл не найден."
+            )
 
-        return filepath, info
+        path = files[0]
 
+    return str(path), info
+
+
+# =========================
+# /start
+# =========================
 
 @dp.message(CommandStart())
-async def start(message: Message):
+async def start_handler(message: Message):
     await message.answer(
         "👋 Привет!\n\n"
         "Я Navo Downloader.\n"
-        "Отправь мне публичную ссылку на видео "
+        "Отправь публичную ссылку на видео "
         "из YouTube, TikTok или Instagram.\n\n"
-        "⬇️ Я попробую скачать его и отправить тебе."
+        "⏬ Я попробую скачать его и отправить тебе."
     )
 
 
+# =========================
+# /help
+# =========================
+
 @dp.message(Command("help"))
-async def help_command(message: Message):
+async def help_handler(message: Message):
     await message.answer(
         "📥 Поддерживаются:\n\n"
         "▶️ YouTube\n"
         "🎵 TikTok\n"
         "📸 Instagram\n\n"
-        "Просто отправь ссылку."
+        "Просто отправь ссылку на видео."
     )
 
 
+# =========================
+# ССЫЛКА
+# =========================
+
 @dp.message(F.text)
-async def handle_link(message: Message):
-    match = URL_RE.search(message.text)
+async def link_handler(message: Message):
+    text = message.text or ""
+
+    match = URL_RE.search(text)
 
     if not match:
         await message.answer(
@@ -116,11 +153,13 @@ async def handle_link(message: Message):
         )
         return
 
-    url = match.group(0).rstrip(".,!?)]}")
+    url = match.group(0).rstrip(
+        ".,!?)]}"
+    )
 
     if not is_supported_url(url):
         await message.answer(
-            "❌ Пока поддерживаются только "
+            "❌ Поддерживаются только "
             "YouTube, TikTok и Instagram."
         )
         return
@@ -142,27 +181,36 @@ async def handle_link(message: Message):
             )
 
         except Exception:
-            logging.exception("Download error")
-
-            await status.edit_text(
-                "❌ Не получилось скачать видео.\n\n"
-                "Возможно, видео приватное, ссылка "
-                "недействительна или файл слишком большой."
+            logging.exception(
+                "Ошибка скачивания"
             )
 
+            await status.edit_text(
+                "❌ Не удалось скачать видео.\n\n"
+                "Возможные причины:\n"
+                "• видео приватное;\n"
+                "• ссылка недействительна;\n"
+                "• сайт временно не поддерживается;\n"
+                "• видео слишком большое."
+            )
             return
 
         await status.edit_text(
             "📤 Отправляю видео..."
         )
 
-        title = info.get("title") or "video"
+        title = info.get(
+            "title",
+            "video"
+        )
 
         safe_title = re.sub(
             r'[\\/:*?"<>|]+',
             "_",
             title
-        )[:80]
+        ).strip()
+
+        safe_title = safe_title[:80]
 
         if not safe_title:
             safe_title = "video"
@@ -184,7 +232,10 @@ async def handle_link(message: Message):
                 caption="✅ Готово!"
             )
 
-        await status.delete()
+        try:
+            await status.delete()
+        except Exception:
+            pass
 
     finally:
         shutil.rmtree(
@@ -193,10 +244,19 @@ async def handle_link(message: Message):
         )
 
 
-async def main():
-    bot = Bot(TOKEN)
+# =========================
+# ЗАПУСК
+# =========================
 
-    await dp.start_polling(bot)
+async def main():
+    bot = Bot(
+        token=TOKEN
+    )
+
+    try:
+        await dp.start_polling(bot)
+    finally:
+        await bot.session.close()
 
 
 if __name__ == "__main__":
