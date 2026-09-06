@@ -9,7 +9,14 @@ from pathlib import Path
 import yt_dlp
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, CommandStart
-from aiogram.types import FSInputFile, Message
+from aiogram.types import (
+    FSInputFile,
+    Message,
+    BotCommand,
+    BotCommandScopeChat,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+)
 
 
 logging.basicConfig(
@@ -21,38 +28,157 @@ logging.basicConfig(
 TOKEN = os.getenv("BOT_TOKEN")
 
 if not TOKEN:
-    raise RuntimeError(
-        "BOT_TOKEN не найден."
-    )
+    raise RuntimeError("BOT_TOKEN не найден.")
+
+
+# ТВОЙ TELEGRAM ID
+ADMIN_ID = 6770975543
 
 
 dp = Dispatcher()
 
-ADMIN_ID = 6770975543
 
+# =========================
+# АДМИН-ПАНЕЛЬ
+# =========================
 
 def is_admin(message: Message) -> bool:
-    return message.from_user is not None and message.from_user.id == ADMIN_ID
+    return (
+        message.from_user is not None
+        and message.from_user.id == ADMIN_ID
+    )
+
+
+admin_keyboard = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [
+            InlineKeyboardButton(
+                text="📊 Статистика",
+                callback_data="admin_stats"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="👥 Пользователи",
+                callback_data="admin_users"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="📢 Рассылка",
+                callback_data="admin_broadcast"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="🚫 Заблокированные",
+                callback_data="admin_blocked"
+            )
+        ],
+    ]
+)
 
 
 @dp.message(Command("admin"))
 async def admin_handler(message: Message):
     if not is_admin(message):
-        await message.answer("⛔ У тебя нет доступа к админ-панели.")
+        await message.answer(
+            "⛔ У тебя нет доступа к админ-панели."
+        )
         return
 
     await message.answer(
-        "👑 Navo Admin\n\n"
-        "📊 Статистика\n"
-        "👥 Пользователи\n"
-        "📢 Рассылка\n"
-        "🚫 Заблокированные"
+        "👑 <b>Navo Admin</b>\n\n"
+        "Выбери действие:",
+        reply_markup=admin_keyboard,
+        parse_mode="HTML"
     )
+
+
+@dp.callback_query(F.data == "admin_stats")
+async def admin_stats(callback):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer(
+            "⛔ Нет доступа",
+            show_alert=True
+        )
+        return
+
+    await callback.answer()
+
+    await callback.message.answer(
+        "📊 <b>Статистика</b>\n\n"
+        "👥 Пользователей: пока не собираются\n"
+        "📥 Загрузок: пока не собираются\n\n"
+        "Следующим шагом подключим настоящую статистику.",
+        parse_mode="HTML"
+    )
+
+
+@dp.callback_query(F.data == "admin_users")
+async def admin_users(callback):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer(
+            "⛔ Нет доступа",
+            show_alert=True
+        )
+        return
+
+    await callback.answer()
+
+    await callback.message.answer(
+        "👥 <b>Пользователи</b>\n\n"
+        "База пользователей пока не подключена.\n"
+        "Следующим шагом добавим её.",
+        parse_mode="HTML"
+    )
+
+
+@dp.callback_query(F.data == "admin_broadcast")
+async def admin_broadcast(callback):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer(
+            "⛔ Нет доступа",
+            show_alert=True
+        )
+        return
+
+    await callback.answer()
+
+    await callback.message.answer(
+        "📢 <b>Рассылка</b>\n\n"
+        "Функцию рассылки подключим после добавления базы пользователей.",
+        parse_mode="HTML"
+    )
+
+
+@dp.callback_query(F.data == "admin_blocked")
+async def admin_blocked(callback):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer(
+            "⛔ Нет доступа",
+            show_alert=True
+        )
+        return
+
+    await callback.answer()
+
+    await callback.message.answer(
+        "🚫 <b>Заблокированные</b>\n\n"
+        "Список заблокированных пока пуст.",
+        parse_mode="HTML"
+    )
+
+
+# =========================
+# DOWNLOADER
+# =========================
 
 URL_RE = re.compile(
     r"https?://\S+",
     re.IGNORECASE
 )
+
 
 SUPPORTED_HOSTS = (
     "youtube.com",
@@ -119,6 +245,10 @@ def download_video(url: str, folder: str):
     return str(path), info
 
 
+# =========================
+# START
+# =========================
+
 @dp.message(CommandStart())
 async def start_handler(message: Message):
     await message.answer(
@@ -129,6 +259,10 @@ async def start_handler(message: Message):
         "⏬ Я попробую скачать его и отправить тебе."
     )
 
+
+# =========================
+# HELP
+# =========================
 
 @dp.message(Command("help"))
 async def help_handler(message: Message):
@@ -141,9 +275,17 @@ async def help_handler(message: Message):
     )
 
 
+# =========================
+# DOWNLOAD
+# =========================
+
 @dp.message(F.text)
 async def link_handler(message: Message):
     text = message.text or ""
+
+    # Не обрабатываем /admin как обычный текст
+    if text.startswith("/"):
+        return
 
     match = URL_RE.search(text)
 
@@ -245,9 +387,48 @@ async def link_handler(message: Message):
         )
 
 
+# =========================
+# ЗАПУСК
+# =========================
+
 async def main():
     bot = Bot(
         token=TOKEN
+    )
+
+    # Обычные команды для всех
+    await bot.set_my_commands(
+        [
+            BotCommand(
+                command="start",
+                description="Запустить бота"
+            ),
+            BotCommand(
+                command="help",
+                description="Помощь"
+            ),
+        ]
+    )
+
+    # Админ-команда только для твоего аккаунта
+    await bot.set_my_commands(
+        [
+            BotCommand(
+                command="start",
+                description="Запустить бота"
+            ),
+            BotCommand(
+                command="help",
+                description="Помощь"
+            ),
+            BotCommand(
+                command="admin",
+                description="Админ-панель"
+            ),
+        ],
+        scope=BotCommandScopeChat(
+            chat_id=ADMIN_ID
+        )
     )
 
     try:
