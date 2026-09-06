@@ -12,6 +12,7 @@ from aiogram.filters import CommandStart, Command
 
 import yt_dlp
 
+
 logging.basicConfig(level=logging.INFO)
 
 TOKEN = os.getenv("BOT_TOKEN")
@@ -19,7 +20,9 @@ TOKEN = os.getenv("BOT_TOKEN")
 if not TOKEN:
     raise RuntimeError("BOT_TOKEN is not set")
 
+
 dp = Dispatcher()
+
 
 URL_RE = re.compile(r"https?://\S+", re.I)
 
@@ -32,11 +35,16 @@ SUPPORTED_HOSTS = (
 
 
 def is_supported_url(url: str) -> bool:
-    return any(host in url.lower() for host in SUPPORTED_HOSTS)
+    return any(
+        host in url.lower()
+        for host in SUPPORTED_HOSTS
+    )
 
 
 def download_video(url: str, folder: str):
-    output = str(Path(folder) / "%(title).80s-%(id)s.%(ext)s")
+    output = str(
+        Path(folder) / "%(title).80s-%(id)s.%(ext)s"
+    )
 
     options = {
         "outtmpl": output,
@@ -50,19 +58,29 @@ def download_video(url: str, folder: str):
     }
 
     with yt_dlp.YoutubeDL(options) as ydl:
-        info = ydl.extract_info(url, download=True)
+        info = ydl.extract_info(
+            url,
+            download=True
+        )
 
         filepath = ydl.prepare_filename(info)
-        mp4 = str(Path(filepath).with_suffix(".mp4"))
+
+        mp4 = str(
+            Path(filepath).with_suffix(".mp4")
+        )
 
         if Path(mp4).exists():
             filepath = mp4
 
         if not Path(filepath).exists():
-            files = list(Path(folder).glob("*"))
+            files = list(
+                Path(folder).glob("*")
+            )
 
             if not files:
-                raise FileNotFoundError("Video file not found")
+                raise FileNotFoundError(
+                    "Video file not found"
+                )
 
             filepath = str(files[0])
 
@@ -97,10 +115,14 @@ async def handle_link(message: Message):
     match = URL_RE.search(message.text)
 
     if not match:
-        await message.answer("❌ Отправь ссылку на видео.")
+        await message.answer(
+            "❌ Отправь ссылку на видео."
+        )
         return
 
-    url = match.group(0).rstrip(".,!?)]}")
+    url = match.group(0).rstrip(
+        ".,!?)]}"
+    )
 
     if not is_supported_url(url):
         await message.answer(
@@ -109,11 +131,16 @@ async def handle_link(message: Message):
         )
         return
 
-    status = await message.answer("⏬ Скачиваю видео...")
+    status = await message.answer(
+        "⏬ Скачиваю видео..."
+    )
 
-    folder = tempfile.mkdtemp(prefix="navo_")
+    folder = tempfile.mkdtemp(
+        prefix="navo_"
+    )
 
     try:
+
         try:
             filepath, info = await asyncio.to_thread(
                 download_video,
@@ -122,19 +149,25 @@ async def handle_link(message: Message):
             )
 
         except Exception:
-            logging.exception("Download error")
+            logging.exception(
+                "Download error"
+            )
 
             await status.edit_text(
                 "❌ Не получилось скачать видео.\n\n"
-                "Возможно, видео приватное, ссылка недействительна "
-                "или файл слишком большой."
+                "Возможно, видео приватное, ссылка "
+                "недействительна или файл слишком большой."
             )
 
             return
 
-        await status.edit_text("📤 Отправляю видео...")
+        await status.edit_text(
+            "📤 Отправляю видео..."
+        )
 
-        title = info.get("title") or "video"
+        title = info.get(
+            "title"
+        ) or "video"
 
         safe_title = re.sub(
             r'[\\/:*?"<>|]+',
@@ -151,12 +184,14 @@ async def handle_link(message: Message):
         )
 
         try:
+
             await message.answer_video(
                 video=video,
                 caption="✅ Готово!"
             )
 
         except Exception:
+
             await message.answer_document(
                 document=video,
                 caption="✅ Готово!"
@@ -165,6 +200,7 @@ async def handle_link(message: Message):
         await status.delete()
 
     finally:
+
         shutil.rmtree(
             folder,
             ignore_errors=True
@@ -172,7 +208,9 @@ async def handle_link(message: Message):
 
 
 async def main():
+
     bot = Bot(TOKEN)
+
     await dp.start_polling(bot)
 
 
