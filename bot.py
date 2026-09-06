@@ -28,6 +28,26 @@ if not TOKEN:
 
 dp = Dispatcher()
 
+ADMIN_ID = 6770975543
+
+
+def is_admin(message: Message) -> bool:
+    return message.from_user is not None and message.from_user.id == ADMIN_ID
+
+
+@dp.message(Command("admin"))
+async def admin_handler(message: Message):
+    if not is_admin(message):
+        await message.answer("⛔ У тебя нет доступа к админ-панели.")
+        return
+
+    await message.answer(
+        "👑 Navo Admin\n\n"
+        "📊 Статистика\n"
+        "👥 Пользователи\n"
+        "📢 Рассылка\n"
+        "🚫 Заблокированные"
+    )
 
 URL_RE = re.compile(
     r"https?://\S+",
