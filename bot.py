@@ -258,6 +258,7 @@ async def main():
     finally:
         await bot.session.close()
 
+print("ЗАПУСК БОТА")
 
 if __name__ == "__main__":
     asyncio.run(main())
