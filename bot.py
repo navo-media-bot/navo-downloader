@@ -22,28 +22,36 @@ raise RuntimeError("BOT_TOKEN не найден")
 dp = Dispatcher()
 
 HOSTS = (
-"youtube.com",
-"youtu.be",
-"tiktok.com",
-"instagram.com",
+    "youtube.com",
+    "youtu.be",
+    "tiktok.com",
+    "instagram.com",
 )
 
 URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
 
+
 def supported(url):
-return any(host in url.lower() for host in HOSTS)
+    return any(
+        host in url.lower()
+        for host in HOSTS
+    )
+
 
 def download(url, folder):
-output = str(Path(folder) / "%(title).80s-%(id)s.%(ext)s")
+    output = str(
+        Path(folder)
+        / "%(title).80s-%(id)s.%(ext)s"
+    )
 
-options = {  
-    "outtmpl": output,  
-    "format": "best[ext=mp4]/best",  
-    "noplaylist": True,  
-    "quiet": True,  
-    "no_warnings": True,  
-    "restrictfilenames": True,  
-}  
+    options = {
+        "outtmpl": output,
+        "format": "best[ext=mp4]/best",
+        "noplaylist": True,
+        "quiet": True,
+        "no_warnings": True,
+        "restrictfilenames": True,
+    }
 
 with yt_dlp.YoutubeDL(options) as ydl:  
     info = ydl.extract_info(url, download=True)  
